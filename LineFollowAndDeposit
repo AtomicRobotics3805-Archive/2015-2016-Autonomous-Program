@@ -1,0 +1,193 @@
+package com.qualcomm.ftcrobotcontroller.opmodes.FTC3805;
+
+import com.qualcomm.robotcore.eventloop.opmode.OpMode;
+import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.LightSensor;
+import com.qualcomm.robotcore.hardware.TouchSensor;
+
+
+public class ClimberDeposit extends OpMode {
+	TouchSensor touchSensor;
+	LightSensor lightSensor;
+
+	DcMotor leftMotor;
+	DcMotor rightMotor;
+
+	//Servo releaseServo;
+
+	enum RUNSTATE {
+		STATE_LOCATE_LINE,
+		STATE_FOLLOW_LINE,
+		STATE_DEPOSIT_CLIMBERS,
+		STATE_STOP,
+	}
+	RUNSTATE  CurrentState;
+
+	//Line follower
+	double rightBaseSpeed = 0.1;
+	double leftBaseSpeed = 0.1;
+
+	/**
+	 * Constructor
+	 */
+	public ClimberDeposit() {
+
+	}
+
+	/*
+	 * Code to run when the op mode is first enabled goes here
+	 *
+	 * @see com.qualcomm.robotcore.eventloop.opmode.OpMode#start()
+	 */
+	@Override
+	public void init() {
+		//releaseServo = hardwareMap.servo.get("CS");
+		//releaseServo.setPosition(1);
+
+		leftMotor = hardwareMap.dcMotor.get("ML");
+		rightMotor = hardwareMap.dcMotor.get("MR");
+		rightMotor.setDirection(DcMotor.Direction.REVERSE);
+
+		touchSensor = hardwareMap.touchSensor.get("touch");
+
+		lightSensor = hardwareMap.lightSensor.get("light");
+        lightSensor.enableLed(true);
+
+		newState(RUNSTATE.STATE_LOCATE_LINE);
+	}
+
+	/*
+	 * This method will be called repeatedly in a loop
+	 *
+	 * @see com.qualcomm.robotcore.eventloop.opmode.OpMode#run()
+	 */
+	@Override
+	public void loop() {
+		switch (CurrentState) {
+			case STATE_LOCATE_LINE:
+				if (lightSensor.getLightDetected() > 0.7) { //not triggered by the blue or red line
+					newState(RUNSTATE.STATE_FOLLOW_LINE);
+				} else {
+					//Go Forward
+					leftMotor.setPower(0.1);
+					rightMotor.setPower(0.1);
+
+					telemetry.addData("0", "Waiting for line...");
+				}
+				break;
+			case STATE_FOLLOW_LINE:
+				if (touchSensor.isPressed()) {
+					rightMotor.setPower(0);
+					leftMotor.setPower(0);
+					newState(RUNSTATE.STATE_STOP);
+				} else {
+					// Follow Line
+					TunePID(0.5, 0.0, 1.0);
+					double motorSpeed = ComputePID(100, lightSensor.getLightDetectedRaw());
+
+					double rightMotorSpeed = rightBaseSpeed - motorSpeed;
+					double leftMotorSpeed = leftBaseSpeed + motorSpeed;
+
+					if (rightMotorSpeed < 0) rightMotorSpeed = 0;
+					if (leftMotorSpeed < 0) leftMotorSpeed = 0;
+
+					if (rightMotorSpeed > 1) rightMotorSpeed = 1;
+					if (leftMotorSpeed > 1) leftMotorSpeed = 1;
+
+					rightMotor.setPower(rightMotorSpeed);
+					leftMotor.setPower(leftMotorSpeed);
+
+					/*if (lightSensor.getLightDetected() > 0.5) {
+						rightMotor.setPower(-0.1);
+						leftMotor.setPower(0.3);
+					} else {
+						rightMotor.setPower(0.3);
+						leftMotor.setPower(-0.1);
+					}*/
+
+                    telemetry.addData("0", "Following line...");
+					telemetry.addData("PID", motorSpeed);
+				}
+				break;
+			/*case STATE_DEPOSIT_CLIMBERS:
+				if (releaseServo.getPosition() == 0) {
+					newState(RUNSTATE.STATE_STOP);
+				} else {
+					//Move Servo to Deposit Climbers
+					releaseServo.setPosition(0);
+
+                    telemetry.addData("0", "Depositing climbers...");
+				}
+				break;*/
+			case STATE_STOP:
+				break;
+		}
+		telemetry.addData("Light", lightSensor.getLightDetected());
+	}
+
+	/*
+	 * Code to run when the op mode is first disabled goes here
+	 *
+	 * @see com.qualcomm.robotcore.eventloop.opmode.OpMode#stop()
+	 */
+	@Override
+	public void stop() {
+
+	}
+	//PID Variables >
+    int error;
+	int lastPV;
+	double pTerm;
+	double iTerm;
+	double dTerm;
+	double Kp;
+	double Ki;
+	double Kd;
+	double OutVal;
+	int iMin = -50;
+	int iMax = 50;
+	int outMin = -100;
+	int outMax = 100;
+	//< PID Variables
+
+
+	double ComputePID(int setPoint, int PV) {
+		error = setPoint - PV;
+
+		pTerm = Kp * error;
+
+		iTerm += Ki * error;
+
+		if(iTerm <= iMin - setPoint){
+			iTerm = iMin - setPoint;
+		}
+		if(iTerm >= iMax + setPoint){
+			iTerm = iMax + setPoint;
+		}
+
+		dTerm = (PV - lastPV);
+
+		OutVal = (pTerm + (iTerm - (Kd * dTerm)));
+
+		lastPV = PV;
+
+		if(OutVal <= outMin){
+			OutVal = outMin;
+		}
+		if(iTerm >= outMax){
+			OutVal = outMax;
+		}
+
+		return OutVal/100;
+	}
+
+	void TunePID(double kp, double ki, double kd) {
+		Kp = kp;
+		Ki = ki;
+		Kd = kd;
+	}
+
+	private void newState(RUNSTATE newState) {
+		CurrentState = newState;
+	}
+}
