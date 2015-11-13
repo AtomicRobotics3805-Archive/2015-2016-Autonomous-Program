@@ -54,20 +54,32 @@ public class V1_2BlueAllianceAutonomousReplica extends OpMode {
 
     //autonomous encoder value goals: 6000, 2000, 500.   53, 34, 11 inches
 
-    //1: 0 = move_forward, 1 = rotate_clockwise, 2 = rotate_clockwise.
+    //1: 0 = move_forward, 1 = move_backward, 2 = rotate_clockwise, 3 = rotate_counter_clockwise,
+    // 4 = done moving.
     //2: Tp: how fast the robot moves while going in the right direction.
     //3: Direction: The direction the robot is heading to in degrees.
     //4: Distance: How far the robot should travel during move_forward.
     static double[][] PID = new double[][]{
-            /*{0, 0.5,  0,   2880},
+            {0, 0.5,  0,   2880},   //Start of blue alliance's program
             {2, 0,    45,  0},
-            {0, 0.5,  45,  5040},*/
-            {1, -0.5,  90,  -572},
+            {0, 0.5,  45,  5040},
+            {1, -0.5,  90,  -572},//-572
             {3, 0,    45,  0},
             {1, -0.5, 45,  -5000},
             {2, 0,    135, 0},
             {0, 0.25, 135, 2400},
-            {4, 0,    0,   0}
+            {4, 0,    0,   0},      //End of blue alliance's program
+
+
+            {0, 0.5,  0,   2880},   //Start of red alliance's program
+            {3, 0,    -45,  0},
+            {0, 0.5,  -45,  5040},
+            {1, -0.5,  -90,  -572},//-572
+            {2, 0,    -45,  0},
+            {1, -0.5, -45,  -5000},
+            {3, 0,    -135, 0},
+            {0, 0.25, -135, 2400},
+            {4, 0,    0,   0}       //End of red alliance's program
     };
 
     //Variable that holds the amount of time the program should wait before moving in seconds.
@@ -79,6 +91,8 @@ public class V1_2BlueAllianceAutonomousReplica extends OpMode {
 
     //Variable that holds the number that represents the part of the PID array that should be
     //running.
+    //Set to 0 for blue alliance
+    //Set to 9 for red alliance
     int intPIDCurrentPart = 0;
 
     //Variable that holds the number that determines which part of the switch case in
