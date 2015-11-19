@@ -6,15 +6,15 @@ import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorController;
 import com.qualcomm.robotcore.hardware.GyroSensor;
-import com.qualcomm.robotcore.hardware.Servo;
-import com.qualcomm.robotcore.util.Range;
 import com.qualcomm.robotcore.hardware.LightSensor;
+import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.hardware.TouchSensor;
+import com.qualcomm.robotcore.util.Range;
 
 /**
  * An empty op mode serving as a template for custom OpModes
  */
-public class V1_3ClimberDepositAutonomousReplica extends OpMode {
+public class V1_4ClimberDepositAutonomousReplica extends OpMode {
 
     //---------------------------------MICHAEL'S VARIABLES-----------------------------------------
 
@@ -98,8 +98,8 @@ public class V1_3ClimberDepositAutonomousReplica extends OpMode {
     //Variable that holds the number that represents the part of the PID array that should be
     //running.
     //Set to 0 for blue alliance
-    //Set to 9 for red alliance
-    int intPIDCurrentPart = 9;
+    //Set to 10 for red alliance
+    int intPIDCurrentPart = 10;
 
     //Variable that holds the number that determines which part of the switch case in
     //start_of_program_reset() is ran.
@@ -114,7 +114,9 @@ public class V1_3ClimberDepositAutonomousReplica extends OpMode {
 
     //Variable that determines whether the encoder values being sent from the array PID are changed
     //to work with Andymark NeverRest motor encoders which have 1220 steps as one revolution.
-    boolean blnConvertTetrixToAndymarkEncoderCount = false;
+    boolean blnConvertTetrixToAndymarkEncoderCount = true;
+
+    //false: 23 inches, true: 19.5 inches
 
     //Variable that is added to the current encoder value to technically reset the encoder without
     //changing the runmode.
@@ -179,7 +181,7 @@ public class V1_3ClimberDepositAutonomousReplica extends OpMode {
     /*
     * Constructor
     */
-    public V1_3ClimberDepositAutonomousReplica() {
+    public V1_4ClimberDepositAutonomousReplica() {
 
     }
 
@@ -336,7 +338,7 @@ public class V1_3ClimberDepositAutonomousReplica extends OpMode {
 
     public double ConvertTetrixToAndymarkEncoderCountIfTrue(){
         if(blnConvertTetrixToAndymarkEncoderCount){
-            return(PID[intPIDCurrentPart][3] * 7/9);
+            return(PID[intPIDCurrentPart][3] * 7/6);//originally 7/9
         }
         else{
             return(PID[intPIDCurrentPart][3]);
@@ -504,7 +506,7 @@ public class V1_3ClimberDepositAutonomousReplica extends OpMode {
 
         gyroSensor = hardwareMap.gyroSensor.get("gyro");
         
-        LeftWheel.setDirection(DcMotor.Direction.REVERSE);
+        RightWheel.setDirection(DcMotor.Direction.REVERSE);
         //--------------------------------------------------------------------------------
 
 
