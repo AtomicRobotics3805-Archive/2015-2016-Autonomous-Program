@@ -3,6 +3,7 @@ package com.qualcomm.ftcrobotcontroller.opmodes;
 
 import com.qualcomm.ftccommon.DbgLog;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
+import com.qualcomm.robotcore.hardware.AnalogInput;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorController;
 import com.qualcomm.robotcore.hardware.GyroSensor;
@@ -150,12 +151,13 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
     double rightBaseSpeed = 0.1;
     double leftBaseSpeed = 0.1;
 
-    TouchSensor touchSensor;
+    AnalogInput ultra_sonicSensor;
     LightSensor lightSensor;
 
     enum RUNSTATE {
         STATE_LOCATE_LINE,
         STATE_FOLLOW_LINE,
+        STATE_MOVE_TO_BEACON,
         STATE_DEPOSIT_CLIMBERS,
         STATE_STOP,
     }
@@ -400,10 +402,11 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
                 }
                 break;
             case STATE_FOLLOW_LINE:
-                if (touchSensor.isPressed()) {
-                    RightWheel.setPower(0);
-                    LeftWheel.setPower(0);
-                    newState(RUNSTATE.STATE_STOP);
+                if (ultra_sonicSensor.getValue() < 20) {
+                    RightWheel.setPower(0.25);
+                    LeftWheel.setPower(0.25);
+                    intCurrentEncoderValue = LeftWheel.getCurrentPosition();
+                    newState(RUNSTATE.STATE_MOVE_TO_BEACON);
                 } else {
                     // Follow Line
                     TunePID(0.5, 0.0, 1.0);
@@ -432,6 +435,29 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
                     telemetry.addData("0", "Following line...");
                     telemetry.addData("PID", motorSpeed);
                 }
+                break;
+            case STATE_MOVE_TO_BEACON:
+                int intDistanceTraveled;
+                intDistanceTraveled = LeftWheel.getCurrentPosition();
+
+                if(intDistanceTraveled < 1120 + intCurrentEncoderValue) {
+                    telemetry.addData("1", "hello");
+                    telemetry.addData("2", intDistanceTraveled);
+                }
+                else{
+                    telemetry.addData("3", "hello2");
+                    newState(RUNSTATE.STATE_DEPOSIT_CLIMBERS);
+                    telemetry.addData("5", "hello3");
+                }
+                /*if () { //not triggered by the blue or red line
+                    newState(RUNSTATE.STATE_FOLLOW_LINE);
+                } else {
+                    //Go Forward
+                    LeftWheel.setPower(0.1);
+                    RightWheel.setPower(0.1);
+
+                    telemetry.addData("0", "Waiting for line...");
+                }*/
                 break;
 			/*case STATE_DEPOSIT_CLIMBERS:
 				if (releaseServo.getPosition() == 0) {
@@ -511,8 +537,7 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
 
 
         //-------------------HILLEL'S CODE-----------------------------------------------
-        touchSensor = hardwareMap.touchSensor.get("touch");
-
+        ultra_sonicSensor = hardwareMap.analogInput.get("ultra_sonic");
         lightSensor = hardwareMap.lightSensor.get("light");
         lightSensor.enableLed(true);
 
