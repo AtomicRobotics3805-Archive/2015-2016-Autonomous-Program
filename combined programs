@@ -9,13 +9,12 @@ import com.qualcomm.robotcore.hardware.DcMotorController;
 import com.qualcomm.robotcore.hardware.GyroSensor;
 import com.qualcomm.robotcore.hardware.LightSensor;
 import com.qualcomm.robotcore.hardware.Servo;
-import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.Range;
 
 /**
  * An empty op mode serving as a template for custom OpModes
  */
-public class V1_4ClimberDepositAutonomousReplica extends OpMode {
+public class V1_5ClimberDepositAutonomousReplica extends OpMode {
 
     //---------------------------------MICHAEL'S VARIABLES-----------------------------------------
 
@@ -65,11 +64,13 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
     //3: Direction: The direction the robot is heading to in degrees.
     //4: Distance: How far the robot should travel during move_forward.
     static double[][] PID = new double[][]{
-            {0, 0.5,  0,   2880},   //Start of blue alliance's program
+            {0, 0.5,  0,   5760},   //Start of blue alliance's program
             {2, 0,    45,  0},
-            {0, 0.5,  45,  5040},
-            {4, 0,    0,    0},
-            {1, -0.5,  90,  -572},//-572
+            {0, 0.5,  45,  2700},
+            {2, 0,    80,  0},
+            {0, 0.5,  80,  720},
+            {4, 0,    0,   0},
+            {1, -0.5, 90,  -572},//-572
             {3, 0,    45,  0},
             {1, -0.5, 45,  -5000},
             {2, 0,    135, 0},
@@ -77,7 +78,7 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
             {5, 0,    0,   0},      //End of blue alliance's program
 
 
-            {0, 0.5,  0,   2880},   //Start of red alliance's program
+            {0, 0.5,  0,   3600},   //Start of red alliance's program
             {3, 0,    -45,  0},
             {0, 0.5,  -45,  5040},
             {4, 0,    0,    0},
@@ -100,7 +101,7 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
     //running.
     //Set to 0 for blue alliance
     //Set to 10 for red alliance
-    int intPIDCurrentPart = 10;
+    int intPIDCurrentPart = 0;
 
     //Variable that holds the number that determines which part of the switch case in
     //start_of_program_reset() is ran.
@@ -147,18 +148,28 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
 
 
     //---------------------------------HILLEL'S VARIABLES------------------------------------------
+    //Red or Blue alliance
+    boolean blnOnBlueAlliance = true;
+
     //Line follower
     double rightBaseSpeed = 0.1;
     double leftBaseSpeed = 0.1;
 
+    Servo ClimberServo;
+    Servo BeaconButtonServo;
+
     AnalogInput ultra_sonicSensor;
     LightSensor lightSensor;
+    //ColorSensor colorSensor;
 
     enum RUNSTATE {
         STATE_LOCATE_LINE,
-        STATE_FOLLOW_LINE,
+        STATE_BLUE_FOLLOW_LINE,
+        STATE_RED_FOLLOW_LINE,
         STATE_MOVE_TO_BEACON,
         STATE_DEPOSIT_CLIMBERS,
+        STATE_BLUE_CHOOSE_BEACON_BUTTON,
+        STATE_RED_CHOOSE_BEACON_BUTTON,
         STATE_STOP,
     }
     RUNSTATE  CurrentState;
@@ -183,7 +194,7 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
     /*
     * Constructor
     */
-    public V1_4ClimberDepositAutonomousReplica() {
+    public V1_5ClimberDepositAutonomousReplica() {
 
     }
 
@@ -366,8 +377,8 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
         powerA = PID[intPIDCurrentPart][1]+turn;
         powerC = PID[intPIDCurrentPart][1]-turn;
 
-        dblPowerA = Range.clip(powerA, MIN_MOTOR_POWER_BACKWARD_VALUE, MAX_MOTOR_POWER_FORWARD_VALUE);
-        dblPowerC = Range.clip(powerC, MIN_MOTOR_POWER_BACKWARD_VALUE, MAX_MOTOR_POWER_FORWARD_VALUE);
+        dblPowerA = Range.clip(powerA, HALF_MOTOR_POWER_BACKWARD_VALUE, HALF_MOTOR_POWER_FORWARD_VALUE);
+        dblPowerC = Range.clip(powerC, HALF_MOTOR_POWER_BACKWARD_VALUE, HALF_MOTOR_POWER_FORWARD_VALUE);
 
                 /*LeftWheel.setPower(dblPowerC);
                 LeftBackWheel.setPower(-dblPowerA);
@@ -388,11 +399,16 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
 
 
     //---------------------------------HILLEL'S PROGRAM--------------------------------------------
-    public void ClimberDepsoit(){
+    public void ClimberDeposit(){
         switch (CurrentState) {
             case STATE_LOCATE_LINE:
-                if (lightSensor.getLightDetected() > 0.7) { //not triggered by the blue or red line
-                    newState(RUNSTATE.STATE_FOLLOW_LINE);
+                if (lightSensor.getLightDetectedRaw() < 30) { //not triggered by the blue or red line
+                    if(blnOnBlueAlliance) {
+                        newState(RUNSTATE.STATE_BLUE_FOLLOW_LINE);
+                    }
+                    else{
+                        newState(RUNSTATE.STATE_RED_FOLLOW_LINE);
+                    }
                 } else {
                     //Go Forward
                     LeftWheel.setPower(0.1);
@@ -401,8 +417,10 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
                     telemetry.addData("0", "Waiting for line...");
                 }
                 break;
-            case STATE_FOLLOW_LINE:
-                if (ultra_sonicSensor.getValue() < 20) {
+            case STATE_BLUE_FOLLOW_LINE:
+                telemetry.addData("4", ultra_sonicSensor.getValue());
+                DbgLog.msg("ultra sonic sensor: " + String.format("%d", ultra_sonicSensor.getValue()));
+                if (ultra_sonicSensor.getValue() < 21) {
                     RightWheel.setPower(0.25);
                     LeftWheel.setPower(0.25);
                     intCurrentEncoderValue = LeftWheel.getCurrentPosition();
@@ -412,8 +430,8 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
                     TunePID(0.5, 0.0, 1.0);
                     double motorSpeed = ComputePID(100, lightSensor.getLightDetectedRaw());
 
-                    double RightWheelSpeed = rightBaseSpeed - motorSpeed;
-                    double LeftWheelSpeed = leftBaseSpeed + motorSpeed;
+                    double RightWheelSpeed = rightBaseSpeed + motorSpeed;
+                    double LeftWheelSpeed = leftBaseSpeed - motorSpeed;
 
                     if (RightWheelSpeed < 0) RightWheelSpeed = 0;
                     if (LeftWheelSpeed < 0) LeftWheelSpeed = 0;
@@ -434,20 +452,63 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
 
                     telemetry.addData("0", "Following line...");
                     telemetry.addData("PID", motorSpeed);
+                    telemetry.addData("Light", lightSensor.getLightDetectedRaw());
+                }
+                break;
+            case STATE_RED_FOLLOW_LINE:
+                if (ultra_sonicSensor.getValue() < 20) {
+                    RightWheel.setPower(0.25);
+                    LeftWheel.setPower(0.25);
+                    intCurrentEncoderValue = LeftWheel.getCurrentPosition();
+                    newState(RUNSTATE.STATE_STOP);
+                } else {
+                    // Follow Line
+                    TunePID(0.5, 0.0, 1.0);
+                    double motorSpeed = ComputePID(100, lightSensor.getLightDetectedRaw());
+
+                    double RightWheelSpeed = rightBaseSpeed + motorSpeed;
+                    double LeftWheelSpeed = leftBaseSpeed - motorSpeed;
+
+                    if (RightWheelSpeed < 0) RightWheelSpeed = 0;
+                    if (LeftWheelSpeed < 0) LeftWheelSpeed = 0;
+
+                    if (RightWheelSpeed > 1) RightWheelSpeed = 1;
+                    if (LeftWheelSpeed > 1) LeftWheelSpeed = 1;
+
+                    RightWheel.setPower(RightWheelSpeed);
+                    LeftWheel.setPower(LeftWheelSpeed);
+
+					/*if (lightSensor.getLightDetected() > 0.5) {
+						RightWheel.setPower(-0.1);
+						LeftWheel.setPower(0.3);
+					} else {
+						RightWheel.setPower(0.3);
+						LeftWheel.setPower(-0.1);
+					}*/
+
+                    telemetry.addData("0", "Following line...");
+                    telemetry.addData("PID", motorSpeed);
+                    telemetry.addData("Light", lightSensor.getLightDetectedRaw());
                 }
                 break;
             case STATE_MOVE_TO_BEACON:
                 int intDistanceTraveled;
                 intDistanceTraveled = LeftWheel.getCurrentPosition();
 
-                if(intDistanceTraveled < 1120 + intCurrentEncoderValue) {
+                if(intDistanceTraveled < 720 + intCurrentEncoderValue) {
                     telemetry.addData("1", "hello");
                     telemetry.addData("2", intDistanceTraveled);
                 }
                 else{
+                    intCurrentEncoderValue = LeftWheel.getCurrentPosition();
                     telemetry.addData("3", "hello2");
-                    newState(RUNSTATE.STATE_DEPOSIT_CLIMBERS);
-                    telemetry.addData("5", "hello3");
+                    if(blnOnBlueAlliance) {
+                        //newState(RUNSTATE.STATE_BLUE_CHOOSE_BEACON_BUTTON);
+                        newState(RUNSTATE.STATE_STOP);
+                    }
+                    else{
+                        newState(RUNSTATE.STATE_RED_CHOOSE_BEACON_BUTTON);
+                    }
                 }
                 /*if () { //not triggered by the blue or red line
                     newState(RUNSTATE.STATE_FOLLOW_LINE);
@@ -460,15 +521,33 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
                 }*/
                 break;
 			/*case STATE_DEPOSIT_CLIMBERS:
-				if (releaseServo.getPosition() == 0) {
+				if (ClimberServo.getPosition() == 0) {
 					newState(RUNSTATE.STATE_STOP);
 				} else {
 					//Move Servo to Deposit Climbers
-					releaseServo.setPosition(0);
+					ClimberServo.setPosition(0);
 
                     telemetry.addData("0", "Depositing climbers...");
 				}
 				break;*/
+            case STATE_BLUE_CHOOSE_BEACON_BUTTON:
+                /*if(colorSensor.blue() > colorSensor.red()){
+                    BeaconButtonServo.setPosition(0.25);
+                }
+                else{
+                    BeaconButtonServo.setPosition(0.75);
+                }
+
+                intDistanceTraveled = LeftWheel.getCurrentPosition();
+
+                if(intDistanceTraveled < 1120 + intCurrentEncoderValue) {
+                    telemetry.addData("1", "hello");
+                    telemetry.addData("2", intDistanceTraveled);
+                }
+                else{
+
+                }*/
+                break;
             case STATE_STOP:
                 intMainCurrentPart ++;
                 break;
@@ -507,9 +586,9 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
     }
 
     void TunePID(double kp, double ki, double kd) {
-        Kp = kp;
-        Ki = ki;
-        Kd = kd;
+        KpHillel = kp;
+        KiHillel = ki;
+        KdHillel = kd;
     }
 
     private void newState(RUNSTATE newState) {
@@ -527,7 +606,7 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
         LeftWheel = hardwareMap.dcMotor.get("LM");
         RightWheel = hardwareMap.dcMotor.get("RM");
 
-        MotorController = hardwareMap.dcMotorController.get("MC");
+        //MotorController = hardwareMap.dcMotorController.get("MC");
         //CollectionSystemController = hardwareMap.dcMotorController.get("CS");
 
         gyroSensor = hardwareMap.gyroSensor.get("gyro");
@@ -537,9 +616,14 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
 
 
         //-------------------HILLEL'S CODE-----------------------------------------------
+        ClimberServo = hardwareMap.servo.get("CS");
+        BeaconButtonServo = hardwareMap.servo.get("BS");
+
         ultra_sonicSensor = hardwareMap.analogInput.get("ultra_sonic");
         lightSensor = hardwareMap.lightSensor.get("light");
         lightSensor.enableLed(true);
+        //colorSensor = hardwareMap.colorSensor.get("color");
+
 
         newState(RUNSTATE.STATE_LOCATE_LINE);
         //--------------------------------------------------------------------------------
@@ -580,7 +664,7 @@ public class V1_4ClimberDepositAutonomousReplica extends OpMode {
                 wheel_movement_decider();
                 break;
             case 3:
-                ClimberDepsoit();//-----HILLEL'S CODE--------//
+                ClimberDeposit();//-----HILLEL'S CODE--------//
                 break;
             case 4:
                 DbgLog.msg("dblGyroValue: " + String.format("%f", dblGyroValue));
