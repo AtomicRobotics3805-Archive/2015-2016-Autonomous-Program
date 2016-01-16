@@ -17,7 +17,7 @@ import com.qualcomm.robotcore.util.Range;
 /**
  * An empty op mode serving as a template for custom OpModes
  */
-public class V1_9ClimberDepositAutonomousReplica extends OpMode {
+public class V2_2ClimberDepositAutonomousReplica extends OpMode {
 
     //---------------------------------MICHAEL'S VARIABLES-----------------------------------------
 
@@ -75,19 +75,19 @@ public class V1_9ClimberDepositAutonomousReplica extends OpMode {
             {2, 0,    90,  0},
             {0, 0.5,  90,  1840},//1840
             {4, 0,    0,   0},
-            {1, -0.5, 90,  -572},//-572
-            {3, 0,    45,  0},
-            {1, -0.5, 45,  -5000},
-            {2, 0,    135, 0},
-            {0, 0.25, 135, 2400},
+            {1, -0.5, 90,  -840},//-572
+            {3, 0,    0,  0},
+            {0, 0.5, 0,  3960},//-5000
+            /*{2, 0,    135, 0},
+            {0, 0.25, 135, 720},//2400*/
             {5, 0,    0,   0},      //End of blue alliance's program
 
 
             {0, 0.5,  0,   5700},   //Start of red alliance's program
             {3, 0,    -45,  0},
-            {0, 0.5,  -45,  3700},//3700
+            {0, 0.5,  -45,  5100},//3700
             {3, 0,    -90,  0},
-            {0, 0.5,  -90,  1940},//1940
+            {0, 0.5,  -90,  1120},//1940
             {4, 0,    0,    0},
             {1, -0.5,  -90,  -572},//-572
             {2, 0,    -45,  0},
@@ -164,7 +164,6 @@ public class V1_9ClimberDepositAutonomousReplica extends OpMode {
 
     Servo ClimberServo;
     Servo BeaconButtonServo;
-    Servo LeftFlipperServo;
 
     AnalogInput ultra_sonicSensor;
     LightSensor lightSensor;
@@ -181,12 +180,12 @@ public class V1_9ClimberDepositAutonomousReplica extends OpMode {
         STATE_MOVE_TO_BEACON,
         STATE_DEPOSIT_CLIMBERS_ARM,
         STATE_DEPOSIT_CLIMBERS_SERVO,
-        STATE_CHOOSE_BEACON_BUTTON,
-        //STATE_RED_CHOOSE_BEACON_BUTTON,
+        STATE_BLUE_CHOOSE_BEACON_BUTTON,
+        STATE_RED_CHOOSE_BEACON_BUTTON,
         STATE_STOP,
     }
     RUNSTATE  CurrentState;
-
+    //STATE_RED_CHOOSE_BEACON_BUTTON,
     //PID Variables >
     int errorHillel;
     int lastPV;
@@ -207,7 +206,7 @@ public class V1_9ClimberDepositAutonomousReplica extends OpMode {
     /*
     * Constructor
     */
-    public V1_9ClimberDepositAutonomousReplica() {
+    public V2_2ClimberDepositAutonomousReplica() {
 
     }
 
@@ -582,7 +581,7 @@ public class V1_9ClimberDepositAutonomousReplica extends OpMode {
                     intCurrentEncoderValue = LeftWheel.getCurrentPosition();
                     telemetry.addData("3", "hello2");
                     if(blnOnBlueAlliance) {
-                        //newState(RUNSTATE.STATE_CHOOSE_BEACON_BUTTON);
+                        //newState(RUNSTATE.STATE_BLUE_CHOOSE_BEACON_BUTTON);
                         newState(RUNSTATE.STATE_DEPOSIT_CLIMBERS_ARM);
                         //newState(RUNSTATE.STATE_STOP);
                     }
@@ -601,7 +600,7 @@ public class V1_9ClimberDepositAutonomousReplica extends OpMode {
                 }*/
                 break;
             case STATE_DEPOSIT_CLIMBERS_ARM:
-                if(Arm.getCurrentPosition() < 1050){//840
+                if(Arm.getCurrentPosition() < 650){//TODO changed from 1050
                     Arm.setPower(0.13);
                 }
                 else{
@@ -627,32 +626,39 @@ public class V1_9ClimberDepositAutonomousReplica extends OpMode {
                     intCurrentEncoderValue = LeftWheel.getCurrentPosition();
                     LeftWheel.setPower(0.05);
                     RightWheel.setPower(0.05);
-                    newState(RUNSTATE.STATE_CHOOSE_BEACON_BUTTON);
+                    newState(RUNSTATE.STATE_BLUE_CHOOSE_BEACON_BUTTON);
 				}
 				break;
-            case STATE_CHOOSE_BEACON_BUTTON:
-                telemetry.addData("5", "Hello from blue choose beacon button!");
-                if(sensorRGBADA.blue() > sensorRGBADA.red()){
-                    BeaconButtonServo.setPosition(0.25);
+            case STATE_BLUE_CHOOSE_BEACON_BUTTON:
+                //telemetry.addData("5", "Hello from blue choose beacon button!");
+                int intdistancetraveled = 0;
+                int intBlueLight = 0;
+                int intRedLight = 0;
+                intBlueLight = sensorRGBADA.blue();
+                intRedLight = sensorRGBADA.red();
+
+                if(intBlueLight > intRedLight){
+                    BeaconButtonServo.setPosition(0.40);
                 }
                 else{
-                    BeaconButtonServo.setPosition(0.75);
-                }
+                    BeaconButtonServo.setPosition(0.80);
+                }//*/
 
-                intDistanceTraveled = LeftWheel.getCurrentPosition();
+                intdistancetraveled = LeftWheel.getCurrentPosition();
 
-                if(intDistanceTraveled < 150 + intCurrentEncoderValue) {
+                if(intdistancetraveled < 500 + intCurrentEncoderValue) {//TODO changed from 150
                     telemetry.addData("1", "hello");
-                    telemetry.addData("2", intDistanceTraveled);
+                    telemetry.addData("2", intdistancetraveled);
                 }
                 else{
                     LeftWheel.setPower(0);
                     RightWheel.setPower(0);
+                    dblGyroValue = 90;
                     newState(RUNSTATE.STATE_STOP);
                 }
                 break;
             case STATE_STOP:
-                //Arm.setPower(0);
+                Arm.setPower(0);
                 intMainCurrentPart ++;
                 break;
         }
@@ -710,6 +716,7 @@ public class V1_9ClimberDepositAutonomousReplica extends OpMode {
         ClimberServo = hardwareMap.servo.get("CS");
         LeftWheel = hardwareMap.dcMotor.get("LM");
         RightWheel = hardwareMap.dcMotor.get("RM");
+        Sweeper = hardwareMap.dcMotor.get("CM");//TODO added
         Arm = hardwareMap.dcMotor.get("TM");
         Arm.setDirection(DcMotor.Direction.REVERSE);
 
@@ -724,8 +731,7 @@ public class V1_9ClimberDepositAutonomousReplica extends OpMode {
 
         //-------------------HILLEL'S CODE-----------------------------------------------
 
-        LeftFlipperServo = hardwareMap.servo.get("LFS");
-        //BeaconButtonServo = hardwareMap.servo.get("BS");
+        BeaconButtonServo = hardwareMap.servo.get("BS");
 
         ultra_sonicSensor = hardwareMap.analogInput.get("ultra_sonic");
         lightSensor = hardwareMap.lightSensor.get("light");
@@ -735,7 +741,6 @@ public class V1_9ClimberDepositAutonomousReplica extends OpMode {
         cdim = hardwareMap.deviceInterfaceModule.get("dim");     //AC
         cdim.setDigitalChannelMode(LED_CHANNEL, DigitalChannelController.Mode.OUTPUT); //AC
 
-        //LeftFlipperServo.setPosition(0.5);
         //ClimberServo.setPosition(0);
 
         Arm.setChannelMode(DcMotorController.RunMode.RUN_TO_POSITION);
@@ -766,6 +771,7 @@ public class V1_9ClimberDepositAutonomousReplica extends OpMode {
                 //ClimberServo.setPosition(0);
                 DbgLog.msg("START BUTTON PRESSED!!!");
                 lngWaitStartTime = System.nanoTime();
+                //Sweeper.setPower(1);//TODO added
                 intMainCurrentPart++;
                 break;
             case 1:
