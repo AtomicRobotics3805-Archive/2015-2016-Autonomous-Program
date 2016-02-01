@@ -1,0 +1,847 @@
+package com.qualcomm.ftcrobotcontroller.opmodes;
+
+
+import android.util.Log;
+
+import com.qualcomm.ftccommon.DbgLog;
+import com.qualcomm.robotcore.eventloop.opmode.OpMode;
+import com.qualcomm.robotcore.exception.RobotCoreException;
+import com.qualcomm.robotcore.hardware.AnalogInput;
+import com.qualcomm.robotcore.hardware.ColorSensor;
+import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorController;
+import com.qualcomm.robotcore.hardware.DeviceInterfaceModule;
+import com.qualcomm.robotcore.hardware.DigitalChannelController;
+import com.qualcomm.robotcore.hardware.GyroSensor;
+import com.qualcomm.robotcore.hardware.LightSensor;
+import com.qualcomm.robotcore.hardware.Servo;
+import com.qualcomm.robotcore.util.Range;
+
+/**
+ * An empty op mode serving as a template for custom OpModes
+ */
+public class AdaGyroTestV2_3ClimberDepositAutonomousReplica extends OpMode {
+
+    //---------------------------------MICHAEL'S VARIABLES-----------------------------------------
+
+    //-------------------------------------constants-----------------------------------------------
+    double CONVERT_TO_SECONDS_NUMBER = 0.000000001;
+    double MAX_MOTOR_POWER_FORWARD_VALUE = 1;
+    double HALF_MOTOR_POWER_FORWARD_VALUE = 0.5;
+    double NO_POWER_TO_MOTORS_VALUE = 0;
+    double HALF_MOTOR_POWER_BACKWARD_VALUE = -0.5;
+    double MIN_MOTOR_POWER_BACKWARD_VALUE = -1;
+    //---------------------------------------------------------------------------------------------
+
+    //-------------------------hardware declarations------------------------------------------
+    DcMotorController MotorController;
+    DcMotorController CollectionSystemController;
+    DcMotor LeftWheel;
+    DcMotor RightWheel;
+    DcMotor Arm;
+    DcMotor Sweeper;
+    DcMotor ConveyorBelt;
+    Servo ReleaseMechanism;
+    //GyroSensor gyroSensor;
+    ColorSensor colorSensor;
+    AdafruitIMU boschBNO055;           //AG
+    //---------------------------------------------------------------------------------------------
+
+    //----------------------------------------PID variables----------------------------------------
+    double Kp = 0.075;
+    double Ki = 0;
+    double Kd = 0;
+    //float Kp = 2;
+    //float Ki = 0.00018;
+    //float Kd = 0.00018;
+    double error;
+    double integral = 0;
+    double derivative = 0;
+    double lastError;
+    double turn;
+    double powerA = 0;
+    double powerC = 0;
+    double dblPowerA;//The final value being sent to the motor controller
+    double dblPowerC;//The final value being sent to the motor controller
+    //---------------------------------------------------------------------------------------------
+
+    //AG
+    volatile double[] rollAngle = new double[2], pitchAngle = new double[2], yawAngle = new double[2];
+
+    //autonomous encoder value goals: 6000, 2000, 500.   53, 34, 11 inches
+
+    //1: 0 = move_forward, 1 = move_backward, 2 = rotate_clockwise, 3 = rotate_counter_clockwise,
+    //   4 = go to next switch case, 5 = done moving.
+    //2: Tp: how fast the robot moves while going in the right direction.
+    //3: Direction: The direction the robot is heading to in degrees.
+    //4: Distance: How far the robot should travel during move_forward.
+    static double[][] PID = new double[][]{
+            {0, 0.5,  0,   5700},//5800   //Start of blue alliance's program
+            {2, 0,    -45,  0},
+            {0, 0.5,  -45,  5000},//3700
+            {1, -0.5, -45,  -1350},
+            {2, 0,    -90,  0},
+            {0, 0.5,  -90,  1940},//1840
+            {4, 0,    0,   0},
+            //{1, -0.5, -90,  -5000},//-840
+            {5, 5,    5,   5},
+            {3, 0,    0,  0},
+            {0, 0.5, 0,  3960},//-5000
+            /*{2, 0,    135, 0},
+            {0, 0.25, 135, 720},//2400*/
+            {5, 0,    0,   0},      //End of blue alliance's program
+
+
+            {0, 0.5,  0,   5700},   //Start of red alliance's program
+            {3, 0,    -45,  0},
+            {0, 0.5,  -45,  5100},//3700
+            {3, 0,    -90,  0},
+            {0, 0.5,  -90,  1120},//1940
+            {4, 0,    0,    0},
+            {1, -0.5,  -90,  -572},//-572
+            {2, 0,    -45,  0},
+            {1, -0.5, -45,  -5000},
+            {3, 0,    -135, 0},
+            {0, 0.25, -135, 2400},
+            {5, 0,    0,   0}       //End of red alliance's program
+    };
+
+    //Variable that holds the amount of time the program should wait before moving in seconds.
+    float fltWaitTime = 0;
+
+    //Variable that holds the number that determines which part of the switch case in loop()
+    //function is ran.
+    int intMainCurrentPart = 0;
+
+    //Variable that holds the number that represents the part of the PID array that should be
+    //running.
+    //Set to 0 for blue alliance
+    //Set to 12 for red alliance
+    int intPIDCurrentPart = 0;
+
+    //Variable that holds the number that determines which part of the switch case in
+    //start_of_program_reset() is ran.
+    int intResetEncodersPart = 0;
+
+    //Variable that determines whether to run starting_direction(). It's turned off after ten cycles
+    //of starting_direction.
+    boolean blnGyroNotCentered = true;
+
+    //Variable that holds the time when the program starts the main loop.
+    long lngWaitStartTime = 0;
+
+    //Variable that determines whether the encoder values being sent from the array PID are changed
+    //to work with Andymark NeverRest motor encoders which have 1220 steps as one revolution.
+    boolean blnConvertTetrixToAndymarkEncoderCount = true;
+
+    //false: 23 inches, true: 19.5 inches
+
+    //Variable that is added to the current encoder value to technically reset the encoder without
+    //changing the runmode.
+    int intCurrentEncoderValue = 0;
+
+    //Variable that stores whether the wait_for_runmode function should increment its count or allow
+    //the next case to run.
+    boolean blnRunCycle = true;
+
+    //Variable that stores how many loops have occurred after the encoders are reset.
+    int intCycleCounter = 0;
+
+    //Variable that holds the time when the program first starts and when the gyro_degree function
+    // reaches the end of it's loop
+    long lngStartTime = System.nanoTime();
+
+    //Variable that is used to run case 0 ten times
+    int i = 0;
+
+    //Variable that stores the current direction in degrees the robot is facing
+    double dblGyroValue = 0;
+
+    //Variable that stores the offset of the gyro sensor
+    double dblAverageZeroRotation = 0;
+
+    //---------------------------------------------------------------------------------------------
+
+
+    //---------------------------------HILLEL'S VARIABLES------------------------------------------
+    //Red or Blue alliance
+    boolean blnOnBlueAlliance = true;
+
+    //Line follower
+    double rightBaseSpeed = 0.1;
+    double leftBaseSpeed = 0.1;
+
+    Servo ClimberServo;
+    Servo BeaconButtonServo;
+
+    AnalogInput ultra_sonicSensor;
+    LightSensor lightSensor;
+    //ColorSensor colorSensor;
+    ColorSensor sensorRGBADA;          //AC
+    DeviceInterfaceModule cdim;        //AC
+    static final int LED_CHANNEL = 5;  //AC
+
+    enum RUNSTATE {
+        STATE_PRECISELY_LOCATE_LINE_START,
+        STATE_PRECISELY_LOCATE_LINE_FIND,
+        STATE_BLUE_FOLLOW_LINE,
+        STATE_RED_FOLLOW_LINE,
+        STATE_MOVE_TO_BEACON,
+        STATE_DEPOSIT_CLIMBERS_ARM,
+        STATE_DEPOSIT_CLIMBERS_SERVO,
+        STATE_BLUE_CHOOSE_BEACON_BUTTON,
+        STATE_RED_CHOOSE_BEACON_BUTTON,
+        STATE_STOP,
+    }
+    RUNSTATE  CurrentState;
+    //STATE_RED_CHOOSE_BEACON_BUTTON,
+    //PID Variables >
+    int errorHillel;
+    int lastPV;
+    double pTerm;
+    double iTerm;
+    double dTerm;
+    double KpHillel;
+    double KiHillel;
+    double KdHillel;
+    double OutVal;
+    int iMin = -50;
+    int iMax = 50;
+    int outMin = -100;
+    int outMax = 100;
+    //< PID Variables
+    //---------------------------------------------------------------------------------------------
+
+    /*
+    * Constructor
+    */
+    public AdaGyroTestV2_3ClimberDepositAutonomousReplica() {
+
+    }
+
+    //-----------------------------------MICHAEL'S PROGRAM-----------------------------------------
+    /*public void starting_direction(){//TODO uncomment all telemetry after testing
+        //telemetry.addData("3", "hello from starting direction");
+        if(blnGyroNotCentered) {
+            dblAverageZeroRotation += gyroSensor.getRotation();
+            //telemetry.addData("4", dblAverageZeroRotation);
+            if (i == 9) {
+                dblAverageZeroRotation = dblAverageZeroRotation / 10;
+                blnGyroNotCentered = false;
+                integral = 0;
+                lastError = 0;
+            }
+            i++;
+        }
+    }*/
+
+    public void start_of_program_reset(){
+        switch(intResetEncodersPart) {
+            case 0:
+                Reset_encoders();
+                break;
+            case 1:
+                wait_for_runmode();
+                break;
+            case 2:
+                Run_Using_Encoders();
+                break;
+            case 3:
+                wait_for_runmode();
+                break;
+            default:
+                //telemetry.addData("2", "Done resetting"); //TODO uncomment this when done testing
+                break;
+        }
+    }
+    
+    //Finds and stores the current heading of the robot in dblGyroValue, based on the input from the
+    // gyro sensor of degrees per second.
+    /*public void gyro_degree(){
+
+        telemetry.addData("4", (System.nanoTime() - lngStartTime) * CONVERT_TO_SECONDS_NUMBER);
+        dblGyroValue += (gyroSensor.getRotation() - dblAverageZeroRotation) * ((System.nanoTime() - lngStartTime) * CONVERT_TO_SECONDS_NUMBER);
+        lngStartTime = System.nanoTime();
+    }*/
+
+    public void wheel_movement_decider(){
+        //gyro_degree();
+        
+        if(PID[intPIDCurrentPart][0] == 0){
+            move_forward();
+        }
+        else if(PID[intPIDCurrentPart][0] == 1){
+            move_backward();
+        }
+        else if(PID[intPIDCurrentPart][0] == 2){
+            rotate_clockwise();
+        }
+        else if(PID[intPIDCurrentPart][0] == 3){
+            rotate_counter_clockwise();
+        }
+        else if(PID[intPIDCurrentPart][0] == 4){
+            intMainCurrentPart ++;
+            intPIDCurrentPart ++;
+        }
+    }
+
+    public void Reset_encoders(){
+        if (LeftWheel.getChannelMode() != DcMotorController.RunMode.RESET_ENCODERS &&
+                RightWheel.getChannelMode() !=
+                        DcMotorController.RunMode.RESET_ENCODERS) {
+            LeftWheel.setChannelMode(DcMotorController.RunMode.RESET_ENCODERS);
+            RightWheel.setChannelMode(DcMotorController.RunMode.RESET_ENCODERS);
+        } else {
+            blnRunCycle = true;
+            intResetEncodersPart++;
+        }
+    }
+    
+    public void Run_Using_Encoders(){
+        if (LeftWheel.getChannelMode() != DcMotorController.RunMode.RUN_USING_ENCODERS &&
+                RightWheel.getChannelMode() !=
+                        DcMotorController.RunMode.RUN_USING_ENCODERS) {
+            LeftWheel.setChannelMode(DcMotorController.RunMode.RUN_USING_ENCODERS);
+            RightWheel.setChannelMode(DcMotorController.RunMode.RUN_USING_ENCODERS);
+        } else {
+            blnRunCycle = true;
+            intResetEncodersPart++;
+        }
+    }
+
+    public void wait_for_runmode(){
+        if(blnRunCycle){
+            intCycleCounter ++;
+        }
+        if(intCycleCounter >= 20){
+            blnRunCycle = false;
+            intCycleCounter = 0;
+            intResetEncodersPart++;
+        }
+    }
+
+    public void move_forward(){
+        int intDistanceTraveled;
+        telemetry.addData("6", intCurrentEncoderValue);
+
+        intDistanceTraveled = LeftWheel.getCurrentPosition();
+
+        if(intDistanceTraveled < ConvertTetrixToAndymarkEncoderCountIfTrue() + intCurrentEncoderValue) {
+            telemetry.addData("1", "hello");
+            telemetry.addData("2", intDistanceTraveled);
+            PID_loop();
+        }
+        else{
+            telemetry.addData("3", "hello2");
+            next_movement();
+            telemetry.addData("5", "hello3");
+        }
+    }
+
+    public void move_backward(){
+        int intDistanceTraveled;
+        intDistanceTraveled = LeftWheel.getCurrentPosition();
+
+        if(intDistanceTraveled > ConvertTetrixToAndymarkEncoderCountIfTrue() + intCurrentEncoderValue){
+            PID_loop();
+        }
+        else{
+            next_movement();
+        }
+    }
+
+    public void rotate_clockwise(){
+        telemetry.addData("6", intCurrentEncoderValue);
+        if(yawAngle[0] > PID[intPIDCurrentPart][2]){
+            PID_loop();
+        }
+        else{
+            next_movement();
+        }
+    }
+
+    public void rotate_counter_clockwise(){
+        telemetry.addData("6", intCurrentEncoderValue);
+        if(yawAngle[0] < PID[intPIDCurrentPart][2]){
+            PID_loop();
+        }
+        else{
+            next_movement();
+        }
+    }
+
+    public double ConvertTetrixToAndymarkEncoderCountIfTrue(){
+        if(blnConvertTetrixToAndymarkEncoderCount){
+            return(PID[intPIDCurrentPart][3] * 7/6);//originally 7/9
+        }
+        else{
+            return(PID[intPIDCurrentPart][3]);
+        }
+    }
+
+    public void next_movement(){
+        DbgLog.msg("FINISHED ONE MOVEMENT!!!");
+        LeftWheel.setPower(NO_POWER_TO_MOTORS_VALUE);
+        RightWheel.setPower(NO_POWER_TO_MOTORS_VALUE);
+        intCurrentEncoderValue = LeftWheel.getCurrentPosition();
+        intPIDCurrentPart++;
+        /*if(gamepad1.a){
+            intPIDCurrentPart ++;
+        }*/
+    }
+
+    public void PID_loop(){
+        error = yawAngle[0] - PID[intPIDCurrentPart][2];
+        integral = integral+error;
+        derivative = error-lastError;
+        turn = (Kp*error)+(Ki*integral)+(Kd*derivative);
+        powerA = PID[intPIDCurrentPart][1]-turn;
+        powerC = PID[intPIDCurrentPart][1]+turn;
+
+        dblPowerA = Range.clip(powerA, HALF_MOTOR_POWER_BACKWARD_VALUE, HALF_MOTOR_POWER_FORWARD_VALUE);
+        dblPowerC = Range.clip(powerC, HALF_MOTOR_POWER_BACKWARD_VALUE, HALF_MOTOR_POWER_FORWARD_VALUE);
+
+                /*LeftWheel.setPower(dblPowerC);
+                LeftBackWheel.setPower(-dblPowerA);
+                RightBackWheel.setPower(dblPowerA);
+                RightWheel.setPower(-dblPowerC);*/
+        LeftWheel.setPower(dblPowerC);
+        RightWheel.setPower(dblPowerA);
+        lastError = error;
+
+        telemetry.addData("1", yawAngle[0]);
+        /*telemetry.addData("2", gyroSensor.getRotation());
+        telemetry.addData("3", dblAverageZeroRotation);
+        telemetry.addData("5", powerA);
+        telemetry.addData("6", powerC);
+        telemetry.addData("7", turn);*/
+    }
+    //---------------------------------------------------------------------------------------------
+
+
+    //---------------------------------HILLEL'S PROGRAM--------------------------------------------
+    public void ClimberDeposit(){
+        switch (CurrentState) {
+            /*case STATE_LOCATE_LINE://SKIPPED for now.
+                if (lightSensor.getLightDetectedRaw() < 100) { //not triggered by the blue or red line
+                    if(blnOnBlueAlliance) {
+                        newState(RUNSTATE.STATE_PRECISELY_LOCATE_LINE_START);
+                    }
+                    else{
+                        newState(RUNSTATE.STATE_RED_FOLLOW_LINE);
+                    }
+                } else {
+                    //Go Forward
+                    LeftWheel.setPower(0.1);
+                    RightWheel.setPower(0.1);
+
+                    telemetry.addData("0", "Waiting for line...");
+                }
+                break;*/
+            case STATE_PRECISELY_LOCATE_LINE_START:
+                int intStartDegree;
+                if(blnOnBlueAlliance){
+                    intStartDegree = -70;
+                }
+                else{
+                    intStartDegree = -110;
+                }
+                if(yawAngle[0] < intStartDegree){
+                    error = yawAngle[0] - intStartDegree;
+                    integral = integral+error;
+                    derivative = error-lastError;
+                    turn = (Kp*error)+(Ki*integral)+(Kd*derivative);
+                    powerA = -turn;
+                    powerC = turn;
+
+                    dblPowerA = Range.clip(powerA, HALF_MOTOR_POWER_BACKWARD_VALUE, HALF_MOTOR_POWER_FORWARD_VALUE);
+                    dblPowerC = Range.clip(powerC, HALF_MOTOR_POWER_BACKWARD_VALUE, HALF_MOTOR_POWER_FORWARD_VALUE);
+
+                    LeftWheel.setPower(dblPowerC);
+                    RightWheel.setPower(dblPowerA);
+                    lastError = error;
+
+                    telemetry.addData("1", yawAngle[0]);
+                    telemetry.addData("2", "hello from START!!!");
+                }
+                else{
+                    newState(RUNSTATE.STATE_PRECISELY_LOCATE_LINE_FIND);
+                }
+                break;
+            case STATE_PRECISELY_LOCATE_LINE_FIND:
+                int intFindDegree;
+                if(blnOnBlueAlliance){
+                    intFindDegree = -180;
+                }
+                else{
+                    intFindDegree = 0;
+                }
+                if(lightSensor.getLightDetectedRaw() < 100){//used to be 15
+                    error = yawAngle[0] - intFindDegree;
+                    integral = integral+error;
+                    derivative = error-lastError;
+                    turn = (Kp*error)+(Ki*integral)+(Kd*derivative);
+                    powerA = -turn;
+                    powerC = turn;
+
+                    dblPowerA = Range.clip(powerA, -0.25, 0.25);//Consider undoing this and instead fine tuning Kp.
+                    dblPowerC = Range.clip(powerC, -0.25, 0.25);
+
+                    LeftWheel.setPower(dblPowerC);
+                    RightWheel.setPower(dblPowerA);
+                    lastError = error;
+
+                    telemetry.addData("1", "hello from FIND!!!");
+                }
+                else {
+                    if (blnOnBlueAlliance) {
+                        newState(RUNSTATE.STATE_BLUE_FOLLOW_LINE);
+                    } else {
+                        newState(RUNSTATE.STATE_BLUE_FOLLOW_LINE);
+                    }
+                }
+                break;
+            case STATE_BLUE_FOLLOW_LINE:
+                telemetry.addData("4", ultra_sonicSensor.getValue());
+                DbgLog.msg("ultra sonic sensor: " + String.format("%d", ultra_sonicSensor.getValue()));
+                if (ultra_sonicSensor.getValue() < 21) {
+                    RightWheel.setPower(0.25);
+                    LeftWheel.setPower(0.25);
+                    intCurrentEncoderValue = LeftWheel.getCurrentPosition();
+                    newState(RUNSTATE.STATE_MOVE_TO_BEACON);
+                } else {
+                    // Follow Line
+                    TunePID(0.5, 0.0, 1.0);
+                    double motorSpeed = ComputePID(100, lightSensor.getLightDetectedRaw());
+
+                    double RightWheelSpeed = rightBaseSpeed - motorSpeed;
+                    double LeftWheelSpeed = leftBaseSpeed + motorSpeed;
+
+                    if (RightWheelSpeed < 0) RightWheelSpeed = 0;
+                    if (LeftWheelSpeed < 0) LeftWheelSpeed = 0;
+
+                    if (RightWheelSpeed > 1) RightWheelSpeed = 1;
+                    if (LeftWheelSpeed > 1) LeftWheelSpeed = 1;
+
+                    RightWheel.setPower(RightWheelSpeed);
+                    LeftWheel.setPower(LeftWheelSpeed);
+
+					/*if (lightSensor.getLightDetected() > 0.5) {
+						RightWheel.setPower(-0.1);
+						LeftWheel.setPower(0.3);
+					} else {
+						RightWheel.setPower(0.3);
+						LeftWheel.setPower(-0.1);
+					}*/
+
+                    telemetry.addData("0", "Following line...");
+                    telemetry.addData("PID", motorSpeed);
+                    telemetry.addData("Light", lightSensor.getLightDetectedRaw());
+                }
+                break;
+            case STATE_RED_FOLLOW_LINE:
+                if (ultra_sonicSensor.getValue() < 21) {
+                    RightWheel.setPower(0.25);
+                    LeftWheel.setPower(0.25);
+                    intCurrentEncoderValue = LeftWheel.getCurrentPosition();
+                    newState(RUNSTATE.STATE_STOP);
+                } else {
+                    // Follow Line
+                    TunePID(0.5, 0.0, 1.0);
+                    double motorSpeed = ComputePID(100, lightSensor.getLightDetectedRaw());
+
+                    double RightWheelSpeed = rightBaseSpeed + motorSpeed;
+                    double LeftWheelSpeed = leftBaseSpeed - motorSpeed;
+
+                    if (RightWheelSpeed < 0) RightWheelSpeed = 0;
+                    if (LeftWheelSpeed < 0) LeftWheelSpeed = 0;
+
+                    if (RightWheelSpeed > 1) RightWheelSpeed = 1;
+                    if (LeftWheelSpeed > 1) LeftWheelSpeed = 1;
+
+                    RightWheel.setPower(RightWheelSpeed);
+                    LeftWheel.setPower(LeftWheelSpeed);
+
+					/*if (lightSensor.getLightDetected() > 0.5) {
+						RightWheel.setPower(-0.1);
+						LeftWheel.setPower(0.3);
+					} else {
+						RightWheel.setPower(0.3);
+						LeftWheel.setPower(-0.1);
+					}*/
+
+                    telemetry.addData("0", "Following line...");
+                    telemetry.addData("PID", motorSpeed);
+                    telemetry.addData("Light", lightSensor.getLightDetectedRaw());
+                }
+                break;
+            case STATE_MOVE_TO_BEACON:
+                int intDistanceTraveled;
+                intDistanceTraveled = LeftWheel.getCurrentPosition();
+
+                if(intDistanceTraveled < 560 + intCurrentEncoderValue) {
+                    telemetry.addData("1", "hello");
+                    telemetry.addData("2", intDistanceTraveled);
+                }
+                else{
+                    LeftWheel.setPower(0);
+                    RightWheel.setPower(0);
+                    Arm.setTargetPosition(1050);//840
+                    intCurrentEncoderValue = LeftWheel.getCurrentPosition();
+                    telemetry.addData("3", "hello2");
+                    if(blnOnBlueAlliance) {
+                        //newState(RUNSTATE.STATE_BLUE_CHOOSE_BEACON_BUTTON);
+                        newState(RUNSTATE.STATE_DEPOSIT_CLIMBERS_ARM);
+                        //newState(RUNSTATE.STATE_STOP);
+                    }
+                    else{
+                        //newState(RUNSTATE.STATE_RED_CHOOSE_BEACON_BUTTON);
+                    }
+                }
+                /*if () { //not triggered by the blue or red line
+                    newState(RUNSTATE.STATE_FOLLOW_LINE);
+                } else {
+                    //Go Forward
+                    LeftWheel.setPower(0.1);
+                    RightWheel.setPower(0.1);
+
+                    telemetry.addData("0", "Waiting for line...");
+                }*/
+                break;
+            case STATE_DEPOSIT_CLIMBERS_ARM:
+                if(Arm.getCurrentPosition() < 650){
+                    Arm.setPower(0.13);
+                }
+                else{
+                    i = 0;
+                   // ClimberServo.setPosition(0.8);
+                    newState(RUNSTATE.STATE_DEPOSIT_CLIMBERS_SERVO);
+                }
+                break;
+            case STATE_DEPOSIT_CLIMBERS_SERVO:
+                //telemetry.addData("1", ClimberServo.getPosition());
+                telemetry.addData("2", i);
+				if (i < 1000) {
+                    //Move Servo to Deposit Climbers
+                    if (i % 10 == 0) {
+                        ClimberServo.setPosition(1);
+                        //ClimberServo.setPosition((double)i / 1000);
+                    }
+                    i ++;
+                    telemetry.addData("0", "Depositing climbers...");
+				} else {
+                    Arm.setTargetPosition(0);
+                    Arm.setPower(0.13);
+                    ClimberServo.setPosition(0);
+                    intCurrentEncoderValue = LeftWheel.getCurrentPosition();
+                    LeftWheel.setPower(0.05);
+                    RightWheel.setPower(0.05);
+                    newState(RUNSTATE.STATE_BLUE_CHOOSE_BEACON_BUTTON);
+				}
+				break;
+            case STATE_BLUE_CHOOSE_BEACON_BUTTON:
+                //telemetry.addData("5", "Hello from blue choose beacon button!");
+                int intdistancetraveled = 0;
+                int intBlueLight = 0;
+                int intRedLight = 0;
+                intBlueLight = sensorRGBADA.blue();
+                intRedLight = sensorRGBADA.red();
+
+                if(intBlueLight > intRedLight){
+                    BeaconButtonServo.setPosition(0.25);
+                }
+                else{
+                    BeaconButtonServo.setPosition(0.60);
+                }//*/
+
+                intdistancetraveled = LeftWheel.getCurrentPosition();
+
+                if(intdistancetraveled < 500 + intCurrentEncoderValue) {
+                    telemetry.addData("1", "hello");
+                    telemetry.addData("2", intdistancetraveled);
+                }
+                else{
+                    LeftWheel.setPower(0);
+                    RightWheel.setPower(0);
+                    dblGyroValue = 90;
+                    newState(RUNSTATE.STATE_STOP);
+                }
+                break;
+            case STATE_STOP:
+                Arm.setPower(0);
+                intMainCurrentPart ++;
+                break;
+        }
+        //telemetry.addData("Light", lightSensor.getLightDetectedRaw());
+    }
+
+    double ComputePID(int setPoint, int PV) {
+        errorHillel = setPoint - PV;
+
+        pTerm = KpHillel * errorHillel;
+
+        iTerm += KiHillel * errorHillel;
+
+        if(iTerm <= iMin - setPoint){
+            iTerm = iMin - setPoint;
+        }
+        if(iTerm >= iMax + setPoint){
+            iTerm = iMax + setPoint;
+        }
+
+        dTerm = (PV - lastPV);
+
+        OutVal = (pTerm + (iTerm - (KdHillel * dTerm)));
+
+        lastPV = PV;
+
+        if(OutVal <= outMin){
+            OutVal = outMin;
+        }
+        if(iTerm >= outMax){
+            OutVal = outMax;
+        }
+
+        return OutVal/100;
+    }
+
+    void TunePID(double kp, double ki, double kd) {
+        KpHillel = kp;
+        KiHillel = ki;
+        KdHillel = kd;
+    }
+
+    private void newState(RUNSTATE newState) {
+        CurrentState = newState;
+    }
+    //---------------------------------------------------------------------------------------------
+
+    /*
+    * Code to run when the op mode is first enabled goes here
+    * @see com.qualcomm.robotcore.eventloop.opmode.OpMode#start()
+    */
+    @Override
+    public void init() {
+        //-------------------MICHAEL'S CODE------------------------------------------------
+        // AG
+        try {
+            boschBNO055 = new AdafruitIMU(hardwareMap, "bno055", (byte)(AdafruitIMU.BNO055_ADDRESS_A * 2),
+                    (byte)AdafruitIMU.OPERATION_MODE_IMU);
+        } catch (RobotCoreException e){
+            Log.i("FtcRobotController", "Exception: " + e.getMessage());
+        }
+
+        //boschBNO055.startIMU();       //AG
+
+        ClimberServo = hardwareMap.servo.get("CS");
+        LeftWheel = hardwareMap.dcMotor.get("LM");
+        RightWheel = hardwareMap.dcMotor.get("RM");
+        Sweeper = hardwareMap.dcMotor.get("CM");
+        Arm = hardwareMap.dcMotor.get("TM");
+        Arm.setDirection(DcMotor.Direction.REVERSE);
+
+        //MotorController = hardwareMap.dcMotorController.get("MC");
+        //CollectionSystemController = hardwareMap.dcMotorController.get("CS");
+
+        //gyroSensor = hardwareMap.gyroSensor.get("gyro");
+        
+        RightWheel.setDirection(DcMotor.Direction.REVERSE);
+
+
+        //--------------------------------------------------------------------------------
+
+
+        //-------------------HILLEL'S CODE-----------------------------------------------
+
+        BeaconButtonServo = hardwareMap.servo.get("BS");
+
+        ultra_sonicSensor = hardwareMap.analogInput.get("ultra_sonic");
+        lightSensor = hardwareMap.lightSensor.get("light");
+        lightSensor.enableLed(true);
+        //colorSensor = hardwareMap.colorSensor.get("color");
+        sensorRGBADA = hardwareMap.colorSensor.get("AdaColor");  //AC
+        cdim = hardwareMap.deviceInterfaceModule.get("dim");     //AC
+        cdim.setDigitalChannelMode(LED_CHANNEL, DigitalChannelController.Mode.OUTPUT); //AC
+
+        //ClimberServo.setPosition(0);
+
+        Arm.setChannelMode(DcMotorController.RunMode.RUN_TO_POSITION);
+
+        newState(RUNSTATE.STATE_PRECISELY_LOCATE_LINE_START);
+        //--------------------------------------------------------------------------------
+    }
+
+    public void init_loop(){//TODO uncomment all telemetry after testing
+        DbgLog.msg("dblGyroValue: " + String.format("%f", dblGyroValue));
+        //telemetry.addData("1", "hello from init_loop");
+        start_of_program_reset();
+        //starting_direction();
+
+        boschBNO055.getIMUGyroAngles(rollAngle, pitchAngle, yawAngle);                //AG
+        telemetry.addData("Headings(yaw): ",
+                String.format("Eul= %4.5f, Quat= %4.5f", yawAngle[0], yawAngle[1]));        //AG
+
+        //telemetry.addData("2", dblAverageZeroRotation);
+        //telemetry.addData("3", dblGyroValue);
+    }
+
+    @Override
+    public void start() {
+        boschBNO055.startIMU();       //AG
+    }
+
+    /*
+    * This method will be called repeatedly in a loop
+    * @see com.qualcomm.robotcore.eventloop.opmode.OpMode#loop()
+    */
+    @Override
+    public void loop() {
+        boschBNO055.getIMUGyroAngles(rollAngle, pitchAngle, yawAngle);                //AG
+        telemetry.addData("Headings(yaw): ",
+                String.format("Eul= %4.5f, Quat= %4.5f", yawAngle[0], yawAngle[1]));        //AG
+
+        switch(intMainCurrentPart) {
+            case 0:
+                // Adafruit color sensor uses a digital channel to operate LED (true = on)
+                cdim.setDigitalChannelState(LED_CHANNEL, true);   //AC
+                //ClimberServo.setPosition(0);
+                DbgLog.msg("START BUTTON PRESSED!!!");
+                lngWaitStartTime = System.nanoTime();
+                intMainCurrentPart++;
+                break;
+            case 1:
+                if(System.nanoTime() < lngWaitStartTime + fltWaitTime / CONVERT_TO_SECONDS_NUMBER) {
+                    //Wait.
+                }
+                else{
+                    intMainCurrentPart++;
+                }
+                break;
+            case 2:
+                DbgLog.msg("dblGyroValue: " + String.format("%f", dblGyroValue));
+                DbgLog.msg("intCurrentEncoderValue: " + String.format("%d", LeftWheel.getCurrentPosition()));
+                wheel_movement_decider();
+                break;
+            case 3:
+                telemetry.addData("1", CurrentState);
+                telemetry.addData("2", dblGyroValue);
+                //gyro_degree();
+                ClimberDeposit();//-----HILLEL'S CODE--------//
+                break;
+            case 4:
+                DbgLog.msg("dblGyroValue: " + String.format("%f", dblGyroValue));
+                DbgLog.msg("intCurrentEncoderValue: " + String.format("%d", LeftWheel.getCurrentPosition()));
+                wheel_movement_decider();
+                break;
+        }
+    }
+
+    /*
+    * Code to run when the op mode is first disabled goes here
+    * @see com.qualcomm.robotcore.eventloop.opmode.OpMode#stop()
+    */
+    @Override
+    public void stop() {
+
+    }
+}
