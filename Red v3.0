@@ -68,8 +68,6 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
     //AG
     volatile double[] rollAngle = new double[2], pitchAngle = new double[2], yawAngle = new double[2];
 
-    //autonomous encoder value goals: 6000, 2000, 500.   53, 34, 11 inches
-
     //1: 0 = move_forward, 1 = move_backward, 2 = rotate_clockwise, 3 = rotate_counter_clockwise,
     //   4 = go to next switch case, 5 = done moving.
     //2: Tp: how fast the robot moves while going in the right direction.
@@ -78,31 +76,33 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
     static double[][] PID = new double[][]{
             //---BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE-
             //Start of blue autonomous
-            {0, 0.5, 0, 4077},      //Move forwards 3.5 feet
-            {2, 0, -45, 0},         //Rotate  to 45 degrees clockwise
-            {0, 0.5, -45, 4120},    //Move forwards approximately 3.5 feet
-            {3, 0, 0, 0},           //Rotate back to 0 degrees counter-clockwise
-            {0, 0.5, 0, 2330},      //Move forwards 2 feet to clear debris
-            {1, -0.5, 0, -2230},    //Move back 2 feet to aline with path
-            {2, 0, -45, 0},         //Rotate back to 45 degrees clockwise
+            {0, 0.75, 0, 4077},     //Move forwards 3.5 feet
+            {2, 0, -45, 0},         //Rotate  to -45 degrees
+            {0, 0.75, -45, 4120},   //Move forwards approximately 3.5 feet
+            {3, 0, 0, 0},           //Rotate back to 0 degrees
+            {0, 0.75, 0, 2330},     //Move forwards 2 feet to clear debris
+            {1, -0.75, 0, -2812},   //Move back a bit more than 2 feet to aline with path
+            {2, 0, -45, 0},         //Rotate back to -45 degrees
+            {0, 0.25, -45, 485},    //Move forwards 5 inches so it can correct for any errors after rotating
             {4, 0, 0, 0},           //Line up and follow line
-            {1, -1, -90, -9320},     //Move back 8 feet
-            {3, 0, 45, 0},          //Rotate to 45 degrees counter-clockwise
+            {1, -1, -90, -9320},    //Move back 8 feet while staying at -90 degrees
+            {3, 0, 45, 0},          //Rotate to 45 degrees (facing the red side mountain)
             {5, 0, 0, 0},           //End of blue alliance's program
             //---BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE--BLUE-
 
             //---RED---RED---RED---RED---RED---RED---RED---RED---RED---RED---RED---RED---RED---RED--
             //Start of red autonomous
-            {0, 0.5, 0, 4077},      //Move forwards 3.5 feet
-            {2, 0, 45, 0},         //Rotate  to 45 degrees clockwise
-            {0, 0.5, 45, 4120},    //Move forwards approximately 3.5 feet
-            {3, 0, 0, 0},           //Rotate back to 0 degrees counter-clockwise
-            {0, 0.5, 0, 2330},      //Move forwards 2 feet to clear debris
-            {1, -0.5, 0, -2230},    //Move back 2 feet to aline with path
-            {2, 0, 45, 0},         //Rotate back to 45 degrees clockwise
+            {0, 0.75, 0, 4077},     //Move forwards 3.5 feet
+            {2, 0, 45, 0},          //Rotate  to 45 degrees
+            {0, 0.75, 45, 4120},    //Move forwards approximately 3.5 feet
+            {3, 0, 0, 0},           //Rotate back to 0 degrees
+            {0, 0.75, 0, 2330},     //Move forwards 2 feet to clear debris
+            {1, -0.75, 0, -2812},   //Move back a bit more than 2 feet to aline with path
+            {2, 0, 45, 0},          //Rotate back to 45 degrees
+            {0, 0.25, 45, 485},     //Move forwards 5 inches so it can correct for any errors after rotating
             {4, 0, 0, 0},           //Line up and follow line
-            {1, -1, 90, -9320},     //Move back 8 feet
-            {3, 0, -45, 0},          //Rotate to 45 degrees counter-clockwise
+            {1, -1, 90, -9320},     //Move back 8 feet while staying at -90 degrees
+            {3, 0, -45, 0},         //Rotate to -45 degrees (facing the blue side mountain)
             {5, 0, 0, 0},           //End of red alliance's program
             //---RED---RED---RED---RED---RED---RED---RED---RED---RED---RED---RED---RED---RED---RED--
     };
@@ -128,11 +128,11 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
     //of starting_direction.
     boolean blnGyroNotCentered = true;
 
-    //Variable that holds the time when the program starts the main loop.
+    //Variable that hold                                      s the time when the program starts the main loop.
     long lngWaitStartTime = 0;
 
     //Variable that determines whether the encoder values being sent from the array PID are changed
-    //to work with Andymark NeverRest motor encoders which have 1220 steps as one revolution.
+    //to work with Andymark NeverRest motor encoders which have 1680 steps as one revolution.
     boolean blnConvertTetrixToAndymarkEncoderCount = true;
 
     //false: 23 inches, true: 19.5 inches
@@ -191,11 +191,12 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
         STATE_RED_ANGLE_LINE,
         STATE_BLUE_FOLLOW_LINE,
         STATE_RED_FOLLOW_LINE,
+        STATE_MOVE_TO_BEACON,
         STATE_DEPOSIT_CLIMBERS,
         STATE_STOP
     }
     RUNSTATE  CurrentState = RUNSTATE.STATE_LOCATE_LINE;
-    //STATE_RED_CHOOSE_BEACON_BUTTON,
+
     //PID Variables >
     int errorHillel;
     int lastPV;
@@ -287,11 +288,11 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
     }
 
     public void Reset_encoders(){
-        if (LeftWheel.getChannelMode() != DcMotorController.RunMode.RESET_ENCODERS &&
-                RightWheel.getChannelMode() !=
+        if (LeftWheel.getMode() != DcMotorController.RunMode.RESET_ENCODERS &&
+                RightWheel.getMode() !=
                         DcMotorController.RunMode.RESET_ENCODERS) {
-            LeftWheel.setChannelMode(DcMotorController.RunMode.RESET_ENCODERS);
-            RightWheel.setChannelMode(DcMotorController.RunMode.RESET_ENCODERS);
+            LeftWheel.setMode(DcMotorController.RunMode.RESET_ENCODERS);
+            RightWheel.setMode(DcMotorController.RunMode.RESET_ENCODERS);
         } else {
             blnRunCycle = true;
             intResetEncodersPart++;
@@ -299,11 +300,11 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
     }
 
     public void Run_Using_Encoders(){
-        if (LeftWheel.getChannelMode() != DcMotorController.RunMode.RUN_USING_ENCODERS &&
-                RightWheel.getChannelMode() !=
+        if (LeftWheel.getMode() != DcMotorController.RunMode.RUN_USING_ENCODERS &&
+                RightWheel.getMode() !=
                         DcMotorController.RunMode.RUN_USING_ENCODERS) {
-            LeftWheel.setChannelMode(DcMotorController.RunMode.RUN_USING_ENCODERS);
-            RightWheel.setChannelMode(DcMotorController.RunMode.RUN_USING_ENCODERS);
+            LeftWheel.setMode(DcMotorController.RunMode.RUN_USING_ENCODERS);
+            RightWheel.setMode(DcMotorController.RunMode.RUN_USING_ENCODERS);
         } else {
             blnRunCycle = true;
             intResetEncodersPart++;
@@ -433,11 +434,11 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
                         newState(RUNSTATE.STATE_RED_ANGLE_LINE);
                     }
                 } else {
-                    //Go Forward
+                    // Move forward
                     LeftWheel.setPower(0.25);
                     RightWheel.setPower(0.25);
 
-                    telemetry.addData("0", "Waiting for line...");
+                    telemetry.addData("0", "Waiting for line..."+lightSensor.getLightDetectedRaw());
                 }
                 break;
             case STATE_BLUE_ANGLE_LINE:
@@ -446,12 +447,14 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
                         newState(RUNSTATE.STATE_BLUE_FOLLOW_LINE);
                     }
                     else{
+                        // Rotate towards the line
                         LeftWheel.setPower(0.25);
-                        LeftWheel.setPower(-0.25);
+                        RightWheel.setPower(-0.25);
                     }
                 }
                 else {
-                    if(LeftWheel.getCurrentPosition() < 1165 + intCurrentEncoderValue){
+                    // Move forwards to align with line
+                    if(LeftWheel.getCurrentPosition() < 291 + intCurrentEncoderValue){
                         LeftWheel.setPower(0.25);
                         RightWheel.setPower(0.25);
                     }
@@ -463,17 +466,19 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
             case STATE_RED_ANGLE_LINE:
                 if(blnReadyToTurn){
                     if(lightSensor.getLightDetectedRaw() > 100){
-                        newState(RUNSTATE.STATE_RED_FOLLOW_LINE);
+                        newState(RUNSTATE.STATE_BLUE_FOLLOW_LINE);
                     }
                     else{
+                        // Rotate towards the line
                         LeftWheel.setPower(-0.25);
-                        LeftWheel.setPower(0.25);
+                        RightWheel.setPower(0.25);
                     }
                 }
                 else {
-                    if(LeftWheel.getCurrentPosition() < 1165 + intCurrentEncoderValue){
-                        LeftWheel.setPower(0.25);
-                        RightWheel.setPower(0.25);
+                    // Move backwards to align with line
+                    if(LeftWheel.getCurrentPosition() > -291 + intCurrentEncoderValue){
+                        LeftWheel.setPower(-0.25);
+                        RightWheel.setPower(-0.25);
                     }
                     else{
                         blnReadyToTurn = true;
@@ -484,11 +489,10 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
                 telemetry.addData("4", ultra_sonicSensor.getValue());
                 DbgLog.msg("ultra sonic sensor: " + String.format("%d", ultra_sonicSensor.getValue()));
                 if (ultra_sonicSensor.getValue() < 21) {
-                    RightWheel.setPower(0);
-                    LeftWheel.setPower(0);
+                    RightWheel.setPower(0.25);
+                    LeftWheel.setPower(0.25);
                     intCurrentEncoderValue = LeftWheel.getCurrentPosition();
-                    i = 0;
-                    newState(RUNSTATE.STATE_DEPOSIT_CLIMBERS);
+                    newState(RUNSTATE.STATE_MOVE_TO_BEACON);
                 } else {
                     // Follow Line
                     TunePID(0.5, 0.0, 1.0);
@@ -512,8 +516,7 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
                     RightWheel.setPower(0.25);
                     LeftWheel.setPower(0.25);
                     intCurrentEncoderValue = LeftWheel.getCurrentPosition();
-                    i = 0;
-                    newState(RUNSTATE.STATE_DEPOSIT_CLIMBERS);
+                    newState(RUNSTATE.STATE_MOVE_TO_BEACON);
                 } else {
                     // Follow Line
                     TunePID(0.5, 0.0, 1.0);
@@ -536,8 +539,22 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
                     telemetry.addData("Light", lightSensor.getLightDetectedRaw());
                 }
                 break;
+            case STATE_MOVE_TO_BEACON:
+                int intDistanceTraveled;
+                intDistanceTraveled = LeftWheel.getCurrentPosition();
+
+                if(intDistanceTraveled < 560 + intCurrentEncoderValue) {
+                    telemetry.addData("0", "Moving towards beacon...");
+                }
+                else{
+                    LeftWheel.setPower(0);
+                    RightWheel.setPower(0);
+                    i = 0;
+                    newState(RUNSTATE.STATE_DEPOSIT_CLIMBERS);
+                }
+                break;
             case STATE_DEPOSIT_CLIMBERS:
-                if(Arm.getCurrentPosition() > 700){
+                if(Arm.getCurrentPosition() > 1600){
                     if (i < 250) {
                         //Move Servo to Deposit Climbers
                         ClimberServo.setPosition(1);
@@ -547,13 +564,13 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
                     else{
                         ClimberServo.setPosition(0);
                         Arm.setTargetPosition(0);
-                        Arm.setPower(0.13);
+                        Arm.setPower(0.26);
                         newState(RUNSTATE.STATE_STOP);
                     }
                 }
                 else{
-                    Arm.setTargetPosition(840);
-                    Arm.setPower(0.13);
+                    Arm.setTargetPosition(1680);
+                    Arm.setPower(0.26);
                     ClimberServo.setPosition(0);
                 }
                 break;
@@ -631,7 +648,6 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
         RightWheel = hardwareMap.dcMotor.get("RM");
         Sweeper = hardwareMap.dcMotor.get("CM");
         Arm = hardwareMap.dcMotor.get("TM");
-        Arm.setDirection(DcMotor.Direction.REVERSE);
 
         //MotorController = hardwareMap.dcMotorController.get("MC");
         //CollectionSystemController = hardwareMap.dcMotorController.get("CS");
@@ -658,12 +674,12 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
 
         //ClimberServo.setPosition(0);
 
-        Arm.setChannelMode(DcMotorController.RunMode.RUN_TO_POSITION);
+        Arm.setMode(DcMotorController.RunMode.RUN_TO_POSITION);
         //--------------------------------------------------------------------------------
     }
 
     public void init_loop(){//TODO uncomment all telemetry after testing
-        DbgLog.msg("dblGyroValue: " + String.format("%f", dblGyroValue));
+        DbgLog.msg("yawAngle: " + String.format("%f", yawAngle[0]));
         //telemetry.addData("1", "hello from init_loop");
         start_of_program_reset();
         //starting_direction();
@@ -709,19 +725,19 @@ public class RED___V3_0_AutonomousClimberDeposit_AdafruitGyro extends OpMode {
                 }
                 break;
             case 2:
-                DbgLog.msg("dblGyroValue: " + String.format("%f", dblGyroValue));
+                DbgLog.msg("yawAngle: " + String.format("%f", yawAngle[0]));
                 DbgLog.msg("intCurrentEncoderValue: " + String.format("%d", LeftWheel.getCurrentPosition()));
                 wheel_movement_decider();
                 break;
             case 3:
                 telemetry.addData("1", CurrentState);
-                telemetry.addData("2", dblGyroValue);
+                telemetry.addData("2", yawAngle[0]);
                 //gyro_degree();
 
                 ClimberDeposit();//-----HILLEL'S CODE--------//
                 break;
             case 4:
-                DbgLog.msg("dblGyroValue: " + String.format("%f", dblGyroValue));
+                DbgLog.msg("yawAngle: " + String.format("%f", yawAngle[0]));
                 DbgLog.msg("intCurrentEncoderValue: " + String.format("%d", LeftWheel.getCurrentPosition()));
                 wheel_movement_decider();
                 break;
